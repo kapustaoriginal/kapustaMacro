@@ -32,8 +32,10 @@ START_STOP_KEY = ecodes.KEY_F6   # старт / стоп
 EXIT_KEY = ecodes.KEY_F8         # выход из программы
 
 START_DELAY = 1     # секунд до начала после F6
+DEVICE_SWITCH_DELAY = 0.4   # пауза при смене виртуального устройства
+                            # (клавиатура <-> мышь <-> курсор), чтобы игра успела переключиться;
+                            # 0 = без паузы
 REPEAT = 0          # сколько раз повторить последовательность; 0 = бесконечно
-DEVICE_SWITCH_DELAY = 0.4   # пауза при смене устройства (курсор <-> клик)
 
 # Типы действий:
 #   ("hold",   клавиша, секунды)                 - зажать клавишу на N секунд
@@ -243,12 +245,29 @@ def resolve(name):
     return kb_ui, code
 
 
+_last_dev = None
+_dev_lock = threading.Lock()
+
+
+def switch_to(dev):
+    """Если устройство сменилось, подождать DEVICE_SWITCH_DELAY перед действием."""
+    global _last_dev
+    with _dev_lock:
+        prev = _last_dev
+        _last_dev = dev
+    if prev is not None and prev is not dev and DEVICE_SWITCH_DELAY > 0:
+        return sleep(DEVICE_SWITCH_DELAY)
+    return not stop_event.is_set()
+
+
 def press(dev, code):
+    switch_to(dev)
     dev.write(ecodes.EV_KEY, code, 1)
     dev.syn()
 
 
 def release(dev, code):
+    switch_to(dev)
     dev.write(ecodes.EV_KEY, code, 0)
     dev.syn()
 
@@ -314,6 +333,7 @@ def do_cursor(x, y, delay=0.0):
     target_y = max(0, min(SCREEN_HEIGHT - 1, int(y)))
     tracked_x, tracked_y = target_x, target_y
 
+    switch_to(abs_ui)
     abs_ui.write(ecodes.EV_ABS, ecodes.ABS_X, target_x)
     abs_ui.write(ecodes.EV_ABS, ecodes.ABS_Y, target_y)
     abs_ui.syn()
